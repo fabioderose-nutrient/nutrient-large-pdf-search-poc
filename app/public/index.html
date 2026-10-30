@@ -1,0 +1,222 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Construction Document Search</title>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230F172A'/%3E%3Ccircle cx='14' cy='14' r='6.5' fill='none' stroke='%2338BDF8' stroke-width='3'/%3E%3Cpath d='M19 19l6 6' stroke='%2338BDF8' stroke-width='3' stroke-linecap='round'/%3E%3C/svg%3E" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600&family=Fira+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="/styles.css" />
+    <script src="/vendor/nutrient/nutrient-viewer.js" defer></script>
+    <script src="/app.js" type="module"></script>
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="brand">
+        <svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true">
+          <rect width="32" height="32" rx="7" />
+          <circle cx="14" cy="14" r="6.5" />
+          <path d="M19 19l6 6" />
+        </svg>
+        <div class="brand-text">
+          <span class="brand-title">Construction Document Search</span>
+          <span class="brand-sub">Nutrient Document Engine + Web SDK &middot; Proof of concept</span>
+        </div>
+      </div>
+
+      <div class="controls">
+        <div class="control">
+          <span class="control-label" id="load-label">Open with</span>
+          <div class="seg" role="radiogroup" aria-labelledby="load-label" id="load-switch">
+            <button type="button" role="radio" data-load="auto" aria-checked="true" title="Choose per document from its size, page count, sheet formats and the user's network">Auto</button>
+            <button type="button" role="radio" data-load="server" aria-checked="false" title="Server-backed: Document Engine renders the pages, the browser never downloads the PDF">Document Engine</button>
+            <button type="button" role="radio" data-load="browser" aria-checked="false" title="Standalone: the PDF is downloaded and opened in the browser with WebAssembly">Web SDK</button>
+          </div>
+        </div>
+        <div class="control">
+          <span class="control-label" id="search-label">Search</span>
+          <div class="seg" role="radiogroup" aria-labelledby="search-label" id="search-switch">
+            <button type="button" role="radio" data-search="accelerated" aria-checked="true" title="Document Engine searches only the pages that can contain the query, in parallel, and streams the hits into the viewer"><span class="dot dot-accelerated"></span>Accelerated</button>
+            <button type="button" role="radio" data-search="builtin" aria-checked="false" title="The viewer's own search: Document Engine page by page window when server-backed, WebAssembly when opened in the browser"><span class="dot dot-builtin"></span>Built-in</button>
+          </div>
+        </div>
+        <label class="control">
+          <span class="control-label">User network</span>
+          <select id="bandwidth" title="Connection speed assumed for the users, used by Auto to estimate the time to open a file in the browser">
+            <option value="200">Office fibre, 200 Mbit/s</option>
+            <option value="50" selected>Typical, 50 Mbit/s</option>
+            <option value="15">Site 4G, 15 Mbit/s</option>
+            <option value="5">Weak site link, 5 Mbit/s</option>
+          </select>
+        </label>
+      </div>
+
+      <div class="topbar-actions">
+        <button type="button" class="btn btn-ghost" id="open-bench">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3v18h18" /><path d="M7 15l4-4 3 3 5-6" /></svg>
+          Benchmark
+        </button>
+      </div>
+    </header>
+
+    <div class="layout">
+      <aside class="library" aria-label="Project documents">
+        <div class="panel-head">
+          <h2>Project documents</h2>
+          <span class="muted" id="doc-count"></span>
+        </div>
+        <label class="dropzone" id="dropzone">
+          <input type="file" id="file-input" accept="application/pdf,.pdf" hidden />
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 16V4" /><path d="M7 9l5-5 5 5" /><path d="M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3" /></svg>
+          <span><strong>Add a PDF</strong> or drop it here</span>
+          <span class="muted small">Up to 2 GB. Uploaded to Document Engine, text indexed in the background.</span>
+        </label>
+        <div class="upload-progress" id="upload-progress" hidden>
+          <div class="upload-name" id="upload-name"></div>
+          <div class="bar"><div class="bar-fill" id="upload-bar"></div></div>
+        </div>
+        <ul class="doc-list" id="doc-list"></ul>
+      </aside>
+
+      <main class="viewer-wrap">
+        <div class="viewer-bar" id="viewer-bar" hidden>
+          <div class="viewer-row">
+            <div class="viewer-title">
+              <span id="viewer-title"></span>
+              <span class="chip" id="viewer-mode"></span>
+              <span class="muted small mono" id="viewer-open"></span>
+            </div>
+            <span class="hint">Press <kbd id="kbd-mod">Ctrl</kbd> <kbd>F</kbd> or use the search icon in the toolbar</span>
+          </div>
+          <details class="route" id="route">
+            <summary id="route-summary"></summary>
+            <div class="route-body" id="route-body"></div>
+          </details>
+        </div>
+        <div id="viewer" class="viewer"></div>
+        <div class="empty" id="empty-state">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z" /><path d="M14 3v6h6" /></svg>
+          <p>Select a document on the left to open it.</p>
+        </div>
+        <div class="viewer-loading" id="viewer-loading" hidden>
+          <div class="spinner"></div>
+          <p id="viewer-loading-text">Opening document...</p>
+        </div>
+      </main>
+
+      <aside class="perf" aria-label="Search performance">
+        <section class="card">
+          <div class="card-head">
+            <h3>Search performance</h3>
+            <span class="chip chip-engine" id="perf-engine">Accelerated</span>
+          </div>
+          <div class="perf-query" id="perf-query"><span class="muted">Run a search in the viewer.</span></div>
+          <div class="metrics">
+            <div class="metric">
+              <span class="metric-label">First results</span>
+              <span class="metric-value" id="m-first">-</span>
+            </div>
+            <div class="metric">
+              <span class="metric-label">All results</span>
+              <span class="metric-value" id="m-total">-</span>
+            </div>
+            <div class="metric">
+              <span class="metric-label">Matches</span>
+              <span class="metric-value" id="m-hits">-</span>
+            </div>
+            <div class="metric">
+              <span class="metric-label">Pages with hits</span>
+              <span class="metric-value" id="m-pages">-</span>
+            </div>
+          </div>
+          <div class="bar"><div class="bar-fill" id="m-bar"></div></div>
+          <ul class="perf-facts" id="perf-facts"></ul>
+          <p class="footnote">Measured in this browser, from the moment the query is sent (after the 250 ms typing pause the Web SDK also uses) to the results being displayed. Viewer loading time is not included.</p>
+        </section>
+
+        <section class="card">
+          <div class="card-head">
+            <h3>Recent searches</h3>
+            <button type="button" class="link" id="clear-history">Clear</button>
+          </div>
+          <table class="history">
+            <colgroup><col /><col class="c-engine" /><col class="c-num" /><col class="c-num" /><col class="c-hits" /></colgroup>
+            <thead>
+              <tr><th>Query</th><th>Engine</th><th class="num">First</th><th class="num">All</th><th class="num">Hits</th></tr>
+            </thead>
+            <tbody id="history"></tbody>
+          </table>
+        </section>
+
+        <section class="card" id="ocr-card" hidden>
+          <div class="card-head"><h3>Scanned pages</h3></div>
+          <p id="ocr-text"></p>
+          <div class="bar ocr-bar" id="ocr-bar" hidden><div class="bar-fill" id="ocr-bar-fill"></div></div>
+          <button type="button" class="btn btn-primary" id="ocr-run">Make them searchable (OCR)</button>
+        </section>
+
+        <section class="card" id="lines-card" hidden>
+          <div class="card-head">
+            <h3>Text with coordinates</h3>
+            <a class="link" id="lines-download" href="#" download>Download JSON</a>
+          </div>
+          <p class="muted small">Every text line Document Engine extracted, with its bounding box on the page (PDF points). The same data drives the search index.</p>
+          <label class="toggle">
+            <input type="checkbox" id="lines-toggle" />
+            <span>Show text lines on the current page</span>
+          </label>
+          <div class="lines-meta muted small" id="lines-meta"></div>
+          <ol class="lines" id="lines-list"></ol>
+        </section>
+      </aside>
+    </div>
+
+    <dialog class="bench" id="bench">
+      <form method="dialog" class="bench-inner" id="bench-form">
+        <div class="bench-head">
+          <div>
+            <h2>Search benchmark</h2>
+            <p class="muted">Runs each query through the selected engines, one after the other, on the document below.</p>
+          </div>
+          <button type="button" class="icon-btn" id="bench-close" aria-label="Close">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" /></svg>
+          </button>
+        </div>
+        <div class="bench-grid">
+          <label class="field">
+            <span>Document</span>
+            <select id="bench-doc"></select>
+          </label>
+          <label class="field">
+            <span>Queries (one per line)</span>
+            <textarea id="bench-queries" rows="6" spellcheck="false"></textarea>
+          </label>
+          <fieldset class="field">
+            <legend>Engines</legend>
+            <label class="check"><input type="checkbox" value="accelerated" checked /> Accelerated (this PoC)</label>
+            <label class="check"><input type="checkbox" value="native" checked /> Server, built-in (Web SDK default request pattern, can take about a minute per query on large files)</label>
+            <label class="check" id="bench-browser-row"><input type="checkbox" value="browser" /> Built-in, in the browser (WebAssembly, only when the open document is opened with Web SDK)</label>
+          </fieldset>
+        </div>
+        <div class="bench-actions">
+          <button type="button" class="btn btn-primary" id="bench-run">Run benchmark</button>
+          <button type="button" class="btn" id="bench-stop" hidden>Stop</button>
+          <button type="button" class="btn btn-ghost-dark" id="bench-csv" disabled>Export CSV</button>
+          <span class="muted small" id="bench-status"></span>
+        </div>
+        <div class="bench-table-wrap">
+          <table class="bench-table">
+            <thead>
+              <tr><th>Query</th><th>Engine</th><th class="num">First result</th><th class="num">All results</th><th class="num">Hits</th><th class="num">Requests</th><th class="num">Speed-up</th></tr>
+            </thead>
+            <tbody id="bench-rows"></tbody>
+          </table>
+        </div>
+      </form>
+    </dialog>
+
+    <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+  </body>
+</html>

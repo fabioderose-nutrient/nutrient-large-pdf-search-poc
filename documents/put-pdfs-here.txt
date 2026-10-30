@@ -1,0 +1,5 @@
+Put the PDFs to import at start-up in this folder.
+Each PDF is uploaded to Document Engine once, then its page text is indexed.
+PDFs in this folder are not committed (see .gitignore).
+To create a large synthetic drawing set, run `npm run generate-sample` in the
+repository root (see README.md).

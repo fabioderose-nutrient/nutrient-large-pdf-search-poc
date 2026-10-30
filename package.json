@@ -1,0 +1,15 @@
+{
+  "name": "nutrient-large-pdf-search-poc-tools",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Host-side tools for the large PDF search PoC: synthetic sample PDF generator",
+  "scripts": {
+    "generate-sample": "node scripts/generate-sample-pdf.mjs"
+  },
+  "devDependencies": {
+    "pdf-lib": "^1.17.1"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

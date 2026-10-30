@@ -1,0 +1,22 @@
+# Dependencies and build output
+node_modules/
+dist/
+
+# Local configuration and secrets
+.env
+.env.*
+!.env.example
+keys/
+*.pem
+*.key
+
+# Documents: drop your own PDFs or generate a sample (see README.md)
+documents/*
+!documents/put-pdfs-here.txt
+
+# Logs, caches, OS and tool files
+*.log
+logs/
+.cache/
+.DS_Store
+*.zip

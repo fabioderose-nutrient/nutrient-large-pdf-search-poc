@@ -1,0 +1,95 @@
+# Fast server-side search on very large construction PDFs.
+# Nutrient Document Engine (text extraction, search, OCR) + Nutrient Web SDK viewer.
+#
+#   scripts/generate-keys.sh          once: JWT key pair and API token in ./keys
+#   docker compose up -d --build      then open http://localhost:4000 (APP_PORT)
+#
+# License keys and local passwords are read from .env (copy .env.example).
+# Empty license keys = evaluation mode.
+
+services:
+  document_engine:
+    image: pspdfkit/document-engine:1.19.0
+    # JWT_PUBLIC_KEY, API_AUTH_TOKEN and SECRET_KEY_BASE, written by scripts/generate-keys.sh.
+    env_file: ./keys/document-engine.env
+    environment:
+      # Document Engine license (activation key or offline license key). Empty = evaluation mode.
+      ACTIVATION_KEY: ${ACTIVATION_KEY:-}
+      PGUSER: de-user
+      PGPASSWORD: ${POSTGRES_PASSWORD:-change-me}
+      PGDATABASE: document-engine
+      PGHOST: db
+      PGPORT: 5432
+      DASHBOARD_USERNAME: dashboard
+      DASHBOARD_PASSWORD: ${DASHBOARD_PASSWORD:-change-me}
+      JWT_ALGORITHM: RS256
+
+      # --- Large construction documents (500 MB+, thousands of pages) ---
+      ASSET_STORAGE_BACKEND: built-in      # use s3 or azure in production (PostgreSQL caps a stored asset at 1 GB)
+      MAX_UPLOAD_SIZE_BYTES: "2147483648"  # 2 GB
+      SERVER_REQUEST_TIMEOUT: "900000"     # 15 min, uploads + post-upload processing
+      PSPDFKIT_WORKER_TIMEOUT: "900000"    # 15 min, long PDF jobs (OCR of large drawing sets)
+      ASSET_STORAGE_CACHE_SIZE: "10000000000"
+
+      # --- Search ---
+      # Allow 2-character queries (sheet tags such as "A2" or door marks "D1").
+      MIN_SEARCH_QUERY_LENGTH: "2"
+      # Every search runs Document Engine's exact text search (phrase matching,
+      # quote folding, precise highlight rectangles). The app only tells it
+      # which pages to look at, using the page text Document Engine extracted
+      # at upload time (see app/src/text-index.js).
+    ports:
+      - "${DOCUMENT_ENGINE_PORT:-5200}:5000"
+    depends_on:
+      - db
+    restart: unless-stopped
+
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: de-user
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change-me}
+      POSTGRES_DB: document-engine
+      POSTGRES_INITDB_ARGS: --data-checksums
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    restart: unless-stopped
+
+  app:
+    build: ./app
+    # DE_API_TOKEN, written by scripts/generate-keys.sh.
+    env_file: ./keys/app.env
+    environment:
+      PORT: "4000"
+      # Web SDK license, only used when a document is opened in the browser. Empty = evaluation mode.
+      WEB_SDK_LICENSE_KEY: ${WEB_SDK_LICENSE_KEY:-}
+      DE_INTERNAL_URL: http://document_engine:5000
+      DE_PUBLIC_URL: http://localhost:${DOCUMENT_ENGINE_PORT:-5200}/
+      JWT_PRIVATE_KEY_PATH: /keys/jwt-private.pem
+      DOCUMENTS_DIR: /documents
+      # "Open with: Auto" routing (app/src/load-routing.js). A document opens in
+      # the browser (Web SDK standalone) only if every limit below holds,
+      # otherwise Document Engine renders it server-side.
+      CLIENT_BANDWIDTH_MBPS: "50"           # default user connection (changeable in the UI)
+      MAX_CLIENT_OPEN_SECONDS: "5"          # estimated download + WebAssembly open time
+      MAX_CLIENT_MB: "150"
+      MAX_CLIENT_PAGES: "1500"
+      MAX_CLIENT_LARGE_FORMAT_PAGES: "50"   # sheets larger than tabloid / A3
+      # OCR the pages without a text layer automatically after upload.
+      AUTO_OCR: "true"
+    volumes:
+      - ./documents:/documents:ro
+      - ./keys:/keys:ro
+      - appdata:/data
+      # Source mounted so edits apply without a rebuild (restart the app for src/).
+      - ./app/src:/app/src:ro
+      - ./app/public:/app/public:ro
+    ports:
+      - "${APP_PORT:-4000}:4000"
+    depends_on:
+      - document_engine
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+  appdata:
